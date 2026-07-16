@@ -26,13 +26,25 @@ import httpx
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
+def _int_env(name: str, default: int) -> int:
+    """Read an int env var, falling back to the default on anything bad
+    (empty, non-numeric, or an accidental 'NAME=value' paste) instead of
+    crashing the whole service on startup."""
+    try:
+        return int(str(os.environ.get(name, default)).strip())
+    except (TypeError, ValueError):
+        return default
+
+
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://ollama:11434/api/chat")
 MODEL = os.environ.get("CHOPPER_MODEL", "llama3.2:3b")
 NOTES_DIR = os.environ.get("NOTES_DIR", "/data/notes")
 PERSONA_FILE = os.environ.get("PERSONA_FILE", "/data/personas.json")
 PERSONA_NAME = os.environ.get("CHOPPER_PERSONA", "chopper")
 API_SECRET = os.environ.get("CHOPPER_API_SECRET", "")
-NUM_CTX = int(os.environ.get("CHOPPER_NUM_CTX", "8192"))
+NUM_CTX = _int_env("CHOPPER_NUM_CTX", 4096)     # context window (was 8192)
+TOP_K = _int_env("CHOPPER_TOP_K", 12)           # how many notes to inject (was 24)
+MAX_TOKENS = _int_env("CHOPPER_MAX_TOKENS", 220)  # cap reply length -> faster + shorter
 
 app = FastAPI(title="Chopper AI")
 
@@ -100,7 +112,7 @@ async def ask(req: AskReq, authorization: str = Header(default="")):
     if not question:
         return {"answer": "You gonna ask me something or just ping me for fun?"}
 
-    notes = relevant_notes(question)
+    notes = relevant_notes(question, TOP_K)
     system = persona_voice()
     if notes:
         system += ("\n\nUse ONLY these facts about yourself and Torn (do NOT show "
@@ -116,7 +128,7 @@ async def ask(req: AskReq, authorization: str = Header(default="")):
             {"role": "user", "content": question},
         ],
         "stream": False,
-        "options": {"num_ctx": NUM_CTX, "temperature": 0.7},
+        "options": {"num_ctx": NUM_CTX, "temperature": 0.7, "num_predict": MAX_TOKENS},
     }
     # qwen3 has a slow "thinking" mode; turn it off. Other models ignore this.
     if "qwen3" in MODEL.lower():
