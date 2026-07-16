@@ -18,7 +18,7 @@ services:
       PERSONA_FILE: /data/personas.json
       CHOPPER_API_SECRET: ${CHOPPER_API_SECRET}
     ports:
-      - "8000:8000"
+      - "8123:8000"
     depends_on:
       - ollama
 
