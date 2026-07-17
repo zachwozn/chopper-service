@@ -129,6 +129,9 @@ SYNONYMS = {
     "rehab": ["rehabilitation", "switzerland"], "chute": ["parachute", "dexterity"],
     "rig": ["oil"], "runner": ["travel", "abroad"], "loot": ["npc"],
     "chain": ["chaining"], "chaining": ["chain"],
+    "make": ["making", "earn", "income"], "earn": ["making", "income", "money"],
+    "rich": ["wealthy", "networth", "money"], "wealth": ["networth", "money"],
+    "billion": ["billions"], "billions": ["billion"], "profit": ["money", "income"],
 }
 
 
@@ -226,9 +229,14 @@ async def ask(req: AskReq, authorization: str = Header(default="")):
             "tags). Do not add, guess, or embellish anything that isn't written "
             "here. CRITICAL - for real people (staff or players): state ONLY the "
             "role, ID, or fact given in the notes; NEVER invent a backstory, "
-            "relationship, personality, skill, or anything else about them. If a "
-            "fact you'd need isn't in the notes below, say you don't know in "
-            "character (e.g. 'no clue, ask Zach') rather than making it up.\n\n"
+            "relationship, personality, skill, or anything else about them. BUT a "
+            "person is often listed INSIDE a group line (e.g. among the Helpers, "
+            "Officers, Moderators, or Developers) - if a name appears in such a "
+            "list, that group IS their role, so answer it plainly (e.g. 'she's one "
+            "of the Helpers'). Only say you don't know if the person or thing "
+            "asked about does not appear anywhere in the facts below - and when it "
+            "genuinely isn't there, say so in character (e.g. 'no clue, ask "
+            "Zach').\n\n"
             + "\n".join(notes))
     else:
         system += ("\n\nYou have no saved notes covering this. Say you don't know "
