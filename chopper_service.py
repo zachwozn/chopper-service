@@ -242,11 +242,13 @@ async def ask(req: AskReq, authorization: str = Header(default="")):
             "Officers, Moderators, or Developers) - if a name appears in such a "
             "list, that group IS their role, so answer it plainly (e.g. 'one of "
             "the Helpers'). The notes don't record players' genders, so refer to "
-            "any player as 'they', never guess 'he' or 'she'. Only say you don't "
-            "know if the person or thing "
-            "asked about does not appear anywhere in the facts below - and when it "
-            "genuinely isn't there, say so in character (e.g. 'no clue, ask "
-            "Zach').\n\n"
+            "any player as 'they', never guess 'he' or 'she'. If you CAN answer "
+            "what was actually asked, just answer it cleanly and stop - do NOT "
+            "tack a 'no clue' disclaimer onto a complete answer, and do NOT "
+            "volunteer that you're missing unrelated details nobody asked about "
+            "(like someone's personal life). Only use 'no clue, ask Zach' when "
+            "you truly can't answer the question at all because the person or "
+            "thing asked about isn't anywhere in the facts below.\n\n"
             + "\n".join(notes))
     else:
         system += ("\n\nYou have no notes matching this message. If it's a Torn "
