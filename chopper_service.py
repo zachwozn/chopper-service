@@ -205,6 +205,10 @@ def strip_think(text: str) -> str:
 
 class AskReq(BaseModel):
     question: str
+    # when the Discord message is a REPLY, the bot sends the message it replied
+    # to so Chopper has conversational context (e.g. its own prior answer).
+    reply_to: str | None = None
+    reply_is_bot: bool = False   # True if reply_to was one of Chopper's messages
 
 
 @app.get("/health")
@@ -221,7 +225,11 @@ async def ask(req: AskReq, authorization: str = Header(default="")):
     if not question:
         return {"answer": "You gonna ask me something or just ping me for fun?"}
 
-    notes = relevant_notes(question, TOP_K)
+    reply_to = (req.reply_to or "").strip()
+    # retrieve against the reply context too, so a short follow-up like "what do
+    # they do?" still finds the right notes based on what was being discussed.
+    retrieval_query = f"{reply_to} {question}".strip() if reply_to else question
+    notes = relevant_notes(retrieval_query, TOP_K)
     system = persona_voice()
     if notes:
         system += (
@@ -232,23 +240,41 @@ async def ask(req: AskReq, authorization: str = Header(default="")):
             "relationship, personality, skill, or anything else about them. BUT a "
             "person is often listed INSIDE a group line (e.g. among the Helpers, "
             "Officers, Moderators, or Developers) - if a name appears in such a "
-            "list, that group IS their role, so answer it plainly (e.g. 'she's one "
-            "of the Helpers'). Only say you don't know if the person or thing "
+            "list, that group IS their role, so answer it plainly (e.g. 'one of "
+            "the Helpers'). The notes don't record players' genders, so refer to "
+            "any player as 'they', never guess 'he' or 'she'. Only say you don't "
+            "know if the person or thing "
             "asked about does not appear anywhere in the facts below - and when it "
             "genuinely isn't there, say so in character (e.g. 'no clue, ask "
             "Zach').\n\n"
             + "\n".join(notes))
     else:
-        system += ("\n\nYou have no saved notes covering this. Say you don't know "
-                   "in character (e.g. 'no clue, ask Zach') - do NOT invent an "
-                   "answer, and never make up details about real people.")
+        system += ("\n\nYou have no notes matching this message. If it's a Torn "
+                   "question you can't answer, say so in character (e.g. 'no clue, "
+                   "ask Zach'). If it's just chit-chat - a greeting, thanks, a "
+                   "compliment, praise, or banter - fire back a short, snarky "
+                   "in-character quip instead of deflecting (someone says 'good "
+                   "boy', you might say 'damn right'). Either way, NEVER invent "
+                   "Torn facts or details about real people.")
+
+    messages = [{"role": "system", "content": system}]
+    if reply_to and req.reply_is_bot:
+        # the user replied to one of Chopper's messages -> feed it back as the
+        # prior assistant turn so the conversation flows.
+        messages.append({"role": "assistant", "content": reply_to})
+        messages.append({"role": "user", "content": question})
+    elif reply_to:
+        # replied to another player's message -> give it as quoted context.
+        messages.append({
+            "role": "user",
+            "content": f'[replying to another player who said: "{reply_to}"]\n{question}',
+        })
+    else:
+        messages.append({"role": "user", "content": question})
 
     payload = {
         "model": MODEL,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": question},
-        ],
+        "messages": messages,
         "stream": False,
         "options": {"num_ctx": NUM_CTX, "temperature": 0.3, "num_predict": MAX_TOKENS},
     }
