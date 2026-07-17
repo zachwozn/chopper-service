@@ -66,15 +66,121 @@ def all_note_lines() -> list:
     return out
 
 
+# Filler words that appear in tons of note lines and carry no retrieval signal.
+STOPWORDS = {
+    "who", "what", "when", "where", "why", "how", "which", "the", "and", "for",
+    "are", "was", "does", "did", "can", "could", "would", "you", "your", "yours",
+    "his", "her", "him", "she", "they", "them", "with", "that", "this", "these",
+    "those", "have", "has", "had", "about", "from", "into", "get", "got", "being",
+    "been", "tell", "know", "chopper", "torn", "there", "their", "will", "any",
+    "all", "some", "one", "two", "per", "not", "but", "much", "many",
+    # common 2-letter words (2-letter tokens are allowed so Torn slang like
+    # "RW"/"OC"/"PI" works, but these carry no signal)
+    "is", "do", "to", "of", "an", "or", "in", "on", "at", "by", "it", "be",
+    "as", "we", "he", "my", "me", "up", "so", "no", "if", "us", "am", "go",
+    "ok", "vs",
+}
+
+# Player phrasing -> words the notes actually use. Keeps keyword search from
+# missing on synonyms (players say "overseas", notes say "abroad", etc.).
+SYNONYMS = {
+    "overseas": ["abroad", "foreign", "travel"],
+    "abroad": ["overseas", "foreign", "travel"],
+    "foreign": ["abroad", "overseas"],
+    "oversea": ["abroad", "foreign", "travel"],
+    "buy": ["purchase", "shop", "sell"],
+    "buying": ["purchase", "shop"],
+    "purchase": ["buy", "shop"],
+    "carry": ["capacity", "luggage", "baggage", "travel"],
+    "hold": ["capacity", "storage"],
+    "luggage": ["capacity", "baggage", "travel"],
+    "baggage": ["capacity", "luggage", "travel"],
+    "fly": ["travel", "flight", "flying"],
+    "flight": ["travel", "fly", "flying"],
+    "plane": ["travel", "flight"],
+    "heal": ["medical", "hospital", "life"],
+    "revive": ["reviving", "revives"],
+    "mug": ["mugging", "attack"],
+    "bust": ["busting", "jail"],
+    "od": ["overdose", "overdosing"],
+    "gym": ["training", "train", "gains"],
+    "money": ["cash", "income", "profit"],
+    "cash": ["money", "income"],
+    "stat": ["stats", "battle"],
+    "cooldown": ["cooldowns"],
+    "boss": ["admin", "staff", "leader"],
+    "dev": ["developer", "staff"],
+    "mod": ["moderator", "staff"],
+    "employee": ["company", "job", "work"],
+    "job": ["company", "work", "employee"],
+    # common Torn slang -> the words the mechanic notes actually use
+    "xan": ["xanax"], "zans": ["xanax"], "zan": ["xanax"], "zanny": ["xanax"],
+    "hosped": ["hospital", "hospitalized"], "hosp": ["hospital"],
+    "rev": ["revive", "reviving"], "freevive": ["revive", "reviving"],
+    "fac": ["faction"], "fact": ["faction"],
+    "oc": ["organized", "crime"], "rw": ["war", "ranked"], "ranked": ["war"],
+    "str": ["strength"], "spd": ["speed"], "dex": ["dexterity"], "def": ["defense"],
+    "bs": ["battle", "stats"], "tbs": ["battle", "stats"],
+    "epi": ["epinephrine"], "tyro": ["tyrosine"], "sero": ["serotonin"],
+    "mela": ["melatonin"], "vic": ["vicodin"], "edvd": ["erotic"],
+    "fhc": ["coupon", "energy", "happy"], "dbk": ["knife", "melee"],
+    "arma": ["armalite", "rifle"], "gak": ["ak", "rifle"],
+    "fak": ["aid", "medical"], "sfak": ["medical", "aid"],
+    "rehab": ["rehabilitation", "switzerland"], "chute": ["parachute", "dexterity"],
+    "rig": ["oil"], "runner": ["travel", "abroad"], "loot": ["npc"],
+    "chain": ["chaining"], "chaining": ["chain"],
+}
+
+
+def _stem(w: str) -> str:
+    """Crude singular/plural fold so 'drugs' matches 'drug', 'stocks' -> 'stock'."""
+    if len(w) > 4 and w.endswith("ies"):
+        return w[:-3] + "y"
+    if len(w) > 3 and w.endswith("s") and not w.endswith("ss"):
+        return w[:-1]
+    return w
+
+
 def relevant_notes(query: str, k: int = 24) -> list:
-    """RAG retrieval: top-k note lines by word overlap with the question."""
-    words = {w for w in re.findall(r"[a-z0-9]+", query.lower()) if len(w) >= 3}
+    """RAG retrieval: top-k note lines, scored by IDF-weighted overlap. Query
+    terms are stopword-filtered, expanded with synonyms, and stemmed so a rare
+    word (a staff name) outranks filler, and phrasing/plurals don't cause misses."""
+    import math
+    base = [
+        w for w in re.findall(r"[a-z0-9]+", query.lower())
+        if len(w) >= 2 and w not in STOPWORDS
+    ]
+    if not base:
+        return []
+    # expand with synonyms, then stem everything
+    expanded = set()
+    for w in base:
+        expanded.add(w)
+        for s in SYNONYMS.get(w, []):
+            expanded.add(s)
+    words = {_stem(w) for w in expanded}
     if not words:
         return []
+    lines = all_note_lines()
+    n_docs = len(lines) or 1
+    tokenized = []
+    df = {}
+    for line, _topic in lines:
+        toks = {_stem(t) for t in re.findall(r"[a-z0-9]+", line.lower())}
+        tokenized.append((line, toks))
+        for w in words:
+            if w in toks:
+                df[w] = df.get(w, 0) + 1
+    # rarer word -> higher weight; a unique name dominates common words
+    idf = {w: math.log((n_docs + 1) / (df.get(w, 0) + 1)) + 1.0 for w in words}
     scored = []
-    for line, _topic in all_note_lines():
-        lw = set(re.findall(r"[a-z0-9]+", line.lower()))
-        score = sum(1 for w in words if w in lw)
+    for line, toks in tokenized:
+        # a note reads "- Subject (...): body". A query word in the Subject means
+        # the line is ABOUT that thing, not just mentioning it - weight it 3x.
+        subject = line.split(":", 1)[0].lower()
+        subj = {_stem(t) for t in re.findall(r"[a-z0-9]+", subject)}
+        score = sum(idf[w] * (3.0 if w in subj else 1.0)
+                    for w in words if w in toks)
         if score:
             scored.append((score, line))
     scored.sort(key=lambda x: x[0], reverse=True)
@@ -115,11 +221,19 @@ async def ask(req: AskReq, authorization: str = Header(default="")):
     notes = relevant_notes(question, TOP_K)
     system = persona_voice()
     if notes:
-        system += ("\n\nUse ONLY these facts about yourself and Torn (do NOT show "
-                   "the [source: ...] tags to the user):\n" + "\n".join(notes))
+        system += (
+            "\n\nAnswer using ONLY the facts below (do NOT show the [source: ...] "
+            "tags). Do not add, guess, or embellish anything that isn't written "
+            "here. CRITICAL - for real people (staff or players): state ONLY the "
+            "role, ID, or fact given in the notes; NEVER invent a backstory, "
+            "relationship, personality, skill, or anything else about them. If a "
+            "fact you'd need isn't in the notes below, say you don't know in "
+            "character (e.g. 'no clue, ask Zach') rather than making it up.\n\n"
+            + "\n".join(notes))
     else:
-        system += ("\n\nYou have no saved notes covering this. If it isn't "
-                   "something you'd know as the faction bot, say so in character.")
+        system += ("\n\nYou have no saved notes covering this. Say you don't know "
+                   "in character (e.g. 'no clue, ask Zach') - do NOT invent an "
+                   "answer, and never make up details about real people.")
 
     payload = {
         "model": MODEL,
@@ -128,7 +242,7 @@ async def ask(req: AskReq, authorization: str = Header(default="")):
             {"role": "user", "content": question},
         ],
         "stream": False,
-        "options": {"num_ctx": NUM_CTX, "temperature": 0.7, "num_predict": MAX_TOKENS},
+        "options": {"num_ctx": NUM_CTX, "temperature": 0.3, "num_predict": MAX_TOKENS},
     }
     # qwen3 has a slow "thinking" mode; turn it off. Other models ignore this.
     if "qwen3" in MODEL.lower():
