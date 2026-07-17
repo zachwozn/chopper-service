@@ -3,6 +3,17 @@ services:
     image: ollama/ollama:latest
     container_name: chopper-ollama
     restart: unless-stopped
+    environment:
+      OLLAMA_KEEP_ALIVE: "-1"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    container_name: chopper-ollama
+    restart: unless-stopped
     volumes:
       - ollama:/root/.ollama
 
