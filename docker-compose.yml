@@ -3,11 +3,20 @@ services:
     image: ollama/ollama:latest
     container_name: chopper-ollama
     restart: unless-stopped
+    environment:
+      OLLAMA_KEEP_ALIVE: "-1"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     volumes:
       - ollama:/root/.ollama
 
   chopper-ai:
-    image: ghcr.io/OWNER/chopper-service:latest   # <-- replace OWNER with your GitHub username (lowercase)
+    image: ghcr.io/zachwozn/chopper-service:latest   # <-- replace OWNER with your GitHub username (lowercase)
     container_name: chopper-ai
     restart: unless-stopped
     pull_policy: always
@@ -18,7 +27,7 @@ services:
       PERSONA_FILE: /data/personas.json
       CHOPPER_API_SECRET: ${CHOPPER_API_SECRET}
     ports:
-      - "8000:8000"              # the endpoint your bot calls
+      - "8123:8000"              # the endpoint your bot calls
     depends_on:
       - ollama
 
