@@ -1,0 +1,29 @@
+{
+  "calendar": {
+    "competitions": [
+      { "title": "Elimination", "description": "Twelve teams enter, one survives; daily team battles until a winner is crowned", "start": 1788609600, "end": 1789732800, "fixed_start_time": true }
+    ],
+    "events": [
+      { "title": "Awareness Awareness Week", "description": "Increased awareness for one week (land hits more reliably)", "start": 1768780800, "end": 1769385599, "fixed_start_time": true },
+      { "title": "Weekend Road Trip", "description": "Double racing points and racing skill", "start": 1801396800, "end": 1770033599, "fixed_start_time": true },
+      { "title": "Valentine's Day", "description": "Love Juice reduces the energy cost of attacking and reviving", "start": 1771027200, "end": 1771113599, "fixed_start_time": false },
+      { "title": "Employee Appreciation Day", "description": "Job points received tripled and gym training effects tripled", "start": 1804248000, "end": 1772884799, "fixed_start_time": true },
+      { "title": "St Patrick's Day", "description": "Alcohol effects are doubled and Green Stout appears in the city", "start": 1773705600, "end": 1773791999, "fixed_start_time": false },
+      { "title": "420 Day", "description": "Cannabis effects are tripled", "start": 1776643200, "end": 1776729599, "fixed_start_time": false },
+      { "title": "Museum Day", "description": "10% bonus to museum point rewards", "start": 1779062400, "end": 1779148799, "fixed_start_time": false },
+      { "title": "World Blood Donor Day", "description": "Life and cooldown penalties for drawing blood are halved", "start": 1781395200, "end": 1781481599, "fixed_start_time": false },
+      { "title": "World Population Day", "description": "Level and weapon EXP gained while attacking is doubled", "start": 1783728000, "end": 1783814399, "fixed_start_time": false },
+      { "title": "World Tiger Day", "description": "Hunting experience is increased by 5x", "start": 1785283200, "end": 1785369599, "fixed_start_time": false },
+      { "title": "International Beer Day", "description": "Beer items are five times more effective", "start": 1786060800, "end": 1786147199, "fixed_start_time": false },
+      { "title": "Tourism Day", "description": "Travel capacity doubled for flights leaving during the event", "start": 1790467200, "end": 1790553599, "fixed_start_time": false },
+      { "title": "CaffeineCon 2026", "description": "Energy drink effects are doubled", "start": 1792022400, "end": 1792108799, "fixed_start_time": false },
+      { "title": "Trick or Treat", "description": "Dress up and attack others to fill your basket with treats", "start": 1792886400, "end": 1793577599, "fixed_start_time": false },
+      { "title": "World Diabetes Day", "description": "Candy effects are tripled", "start": 1794614400, "end": 1794700799, "fixed_start_time": false },
+      { "title": "Black Friday", "description": "Torn's yearly dollar sale; many bazaars list goods for $1", "start": 1795737600, "end": 1795823999, "fixed_start_time": true },
+      { "title": "Slash Wednesday", "description": "Hospital times reduced by 75%", "start": 1796774400, "end": 1796860799, "fixed_start_time": false },
+      { "title": "Torn Anniversary", "description": "Torn's birthday (turns 22 in 2026)", "start": 1794700800, "end": 1794787199, "fixed_start_time": true },
+      { "title": "Easter Egg Hunt", "description": "Easter eggs appear at random throughout Torn; collect and consume them for powerful effects", "start": 1775088000, "end": 1775692799, "fixed_start_time": false },
+      { "title": "Christmas Town", "description": "Torn's festive theme park opens; explore maps for treasure and avoid traps", "start": 1797638400, "end": 1798761599, "fixed_start_time": false }
+    ]
+  }
+}

@@ -47,6 +47,92 @@ NUM_CTX = _int_env("CHOPPER_NUM_CTX", 4096)     # context window (was 8192)
 TOP_K = _int_env("CHOPPER_TOP_K", 12)           # how many notes to inject (was 24)
 MAX_TOKENS = _int_env("CHOPPER_MAX_TOKENS", 220)  # cap reply length -> faster + shorter
 
+# Qwen-family models occasionally code-switch into Chinese/other scripts mid-reply.
+# This matches CJK, kana, hangul, Cyrillic, and CJK/fullwidth punctuation so we can
+# detect and scrub those slips (the prompt asks for English-only, but it's not 100%).
+_NON_LATIN_RE = re.compile(
+    r"[　-〿぀-ヿ㐀-䶿一-鿿"
+    r"가-힯＀-￯Ѐ-ӿ]"
+)
+
+
+def _has_non_latin(text: str) -> bool:
+    return bool(_NON_LATIN_RE.search(text or ""))
+
+
+def _strip_non_latin(text: str) -> str:
+    """Last-resort scrub: drop non-Latin runs and tidy leftover whitespace/punct."""
+    cleaned = _NON_LATIN_RE.sub("", text or "")
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    return cleaned.strip(" ,;:.-–—\t\n")
+
+
+CALENDAR_FILE = os.environ.get("CALENDAR_FILE", "/data/calendar.json")
+_DAY = 86400
+
+
+def _load_calendar() -> list:
+    """Load event objects (title/description/start/end unix ts) from calendar.json."""
+    try:
+        with open(CALENDAR_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        cal = data.get("calendar", {})
+        return list(cal.get("competitions", [])) + list(cal.get("events", []))
+    except Exception:
+        return []
+
+
+_CALENDAR = _load_calendar()
+
+
+def _event_window(e: dict):
+    """Return a sane (start, end) window. Some source rows have a corrupted start
+    (start > end, or an absurd multi-year span); salvage those as a single day
+    ending at `end`."""
+    s, en = e.get("start"), e.get("end")
+    if not isinstance(s, int) or not isinstance(en, int):
+        return None
+    if s <= en and (en - s) <= 60 * _DAY:
+        return s, en
+    return en - (_DAY - 1), en
+
+
+def calendar_status(now_ts: int) -> str:
+    """Compute the authoritative 'active now / next up' event string for the model,
+    so it never has to reason about dates itself."""
+    if not _CALENDAR:
+        return ""
+    active, upcoming = [], []
+    for e in _CALENDAR:
+        w = _event_window(e)
+        if not w:
+            continue
+        s, en = w
+        title = e.get("title", "?")
+        desc = (e.get("description") or "").rstrip(". ")
+        if s <= now_ts <= en:
+            active.append((en, title, desc))
+        elif s > now_ts:
+            upcoming.append((s, title, desc))
+    active.sort()
+    upcoming.sort()
+
+    def d(ts):
+        return datetime.fromtimestamp(ts, timezone.utc).strftime("%b %d, %Y")
+
+    parts = ["EVENT STATUS (authoritative - for any question about current or "
+             "upcoming events, use these facts exactly and do NOT recompute dates "
+             "yourself):"]
+    if active:
+        parts.append("Active right now: " + "; ".join(
+            f"{t} ({desc}), running until {d(en)}" for en, t, desc in active) + ".")
+    else:
+        parts.append("No Torn calendar event is active right now.")
+    if upcoming:
+        s, t, desc = upcoming[0]
+        parts.append(f"Next up: {t} on {d(s)} ({desc}).")
+    return " ".join(parts)
+
 app = FastAPI(title="Chopper AI")
 
 
@@ -238,17 +324,12 @@ async def ask(req: AskReq, authorization: str = Header(default="")):
         "Japanese, Korean, Cyrillic, etc.) - every word of your reply must be "
         "English."
     )
-    today = datetime.now(timezone.utc).strftime("%A, %B %d, %Y")
-    system += (
-        f"\n\nToday's date is {today} (Torn City Time, which is UTC). Use this "
-        "when a question depends on the current date - especially events. An "
-        "event is only 'currently running' / 'active now' if today's date falls "
-        "on it or inside its date range. If an event's date is still in the "
-        "future, it's UPCOMING (say when it is); if its date already passed this "
-        "year, it's OVER for the year. Never call a single-day event that isn't "
-        "actually today 'currently running'. If nothing is active today, say so "
-        "and mention what's coming up next."
-    )
+    now = datetime.now(timezone.utc)
+    today = now.strftime("%A, %B %d, %Y")
+    system += f"\n\nToday's date is {today} (Torn City Time, which is UTC)."
+    cal = calendar_status(int(now.timestamp()))
+    if cal:
+        system += "\n\n" + cal
     if notes:
         system += (
             "\n\nAnswer using ONLY the facts below (do NOT show the [source: ...] "
@@ -297,6 +378,29 @@ async def ask(req: AskReq, authorization: str = Header(default="")):
     else:
         messages.append({"role": "user", "content": question})
 
+    answer = strip_think(await _ollama_chat(messages))
+
+    # Guardrail: if the model code-switched into a non-Latin script, retry once
+    # with an explicit correction, then scrub as a last resort.
+    if _has_non_latin(answer):
+        retry_messages = messages + [
+            {"role": "assistant", "content": answer},
+            {"role": "user", "content": (
+                "That reply contained non-English text. Say the same thing again, "
+                "entirely in English - no other languages, no non-English characters."
+            )},
+        ]
+        retry = strip_think(await _ollama_chat(retry_messages))
+        answer = retry if not _has_non_latin(retry) else (
+            _strip_non_latin(retry) or _strip_non_latin(answer)
+        )
+
+    answer = answer or "brain fart — ask again"
+    return {"answer": answer[:1900]}
+
+
+async def _ollama_chat(messages: list) -> str:
+    """POST a chat completion to Ollama and return the raw message content."""
     payload = {
         "model": MODEL,
         "messages": messages,
@@ -311,9 +415,6 @@ async def ask(req: AskReq, authorization: str = Header(default="")):
         async with httpx.AsyncClient(timeout=180) as client:
             r = await client.post(OLLAMA_URL, json=payload)
             r.raise_for_status()
-            msg = r.json()["message"]
+            return r.json()["message"].get("content", "")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"model error: {e}")
-
-    answer = strip_think(msg.get("content", "")) or "brain fart — ask again"
-    return {"answer": answer[:1900]}
