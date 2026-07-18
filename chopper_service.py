@@ -21,6 +21,7 @@ import glob
 import json
 import os
 import re
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException
@@ -231,6 +232,23 @@ async def ask(req: AskReq, authorization: str = Header(default="")):
     retrieval_query = f"{reply_to} {question}".strip() if reply_to else question
     notes = relevant_notes(retrieval_query, TOP_K)
     system = persona_voice()
+    system += (
+        "\n\nAlways respond ENTIRELY in English. Never switch to or mix in any "
+        "other language, and never use non-Latin characters (no Chinese, "
+        "Japanese, Korean, Cyrillic, etc.) - every word of your reply must be "
+        "English."
+    )
+    today = datetime.now(timezone.utc).strftime("%A, %B %d, %Y")
+    system += (
+        f"\n\nToday's date is {today} (Torn City Time, which is UTC). Use this "
+        "when a question depends on the current date - especially events. An "
+        "event is only 'currently running' / 'active now' if today's date falls "
+        "on it or inside its date range. If an event's date is still in the "
+        "future, it's UPCOMING (say when it is); if its date already passed this "
+        "year, it's OVER for the year. Never call a single-day event that isn't "
+        "actually today 'currently running'. If nothing is active today, say so "
+        "and mention what's coming up next."
+    )
     if notes:
         system += (
             "\n\nAnswer using ONLY the facts below (do NOT show the [source: ...] "
