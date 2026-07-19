@@ -67,6 +67,23 @@ def _strip_non_latin(text: str) -> str:
     return cleaned.strip(" ,;:.-–—\t\n")
 
 
+_DEFLECT_RE = re.compile(r"(?i)\b(no clue|ask zach|poke zach|ask the boss)\b")
+
+
+def _strip_deflection(text: str) -> str:
+    """The persona's fallback is 'no clue, ask Zach'. That's fine as a WHOLE reply
+    when Chopper genuinely can't answer, but it must not be tacked on before/after
+    a real answer. If the reply has both a real sentence AND a deflection sentence,
+    drop the deflection ones; if the reply is ONLY a deflection, leave it alone."""
+    if not text or not _DEFLECT_RE.search(text):
+        return text
+    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+    kept = [s for s in sentences if not _DEFLECT_RE.search(s)]
+    if kept and len(kept) < len(sentences):
+        return " ".join(kept).strip()
+    return text
+
+
 CALENDAR_FILE = os.environ.get("CALENDAR_FILE", "/data/calendar.json")
 _DAY = 86400
 
@@ -394,6 +411,9 @@ async def ask(req: AskReq, authorization: str = Header(default="")):
         answer = retry if not _has_non_latin(retry) else (
             _strip_non_latin(retry) or _strip_non_latin(answer)
         )
+
+    # Don't let a real answer get a "no clue, ask Zach" deflection tacked on.
+    answer = _strip_deflection(answer)
 
     answer = answer or "brain fart — ask again"
     return {"answer": answer[:1900]}
