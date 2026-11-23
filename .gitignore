@@ -1,0 +1,7 @@
+# local secrets - this repo is public
+.env
+
+# live API cache / test dumps
+live-cache.json
+live-dump/
+__pycache__/
