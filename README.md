@@ -105,3 +105,42 @@ replies in character. It's rate-limited to one question per user every 8 seconds
   string. No rebuild needed; it's re-read every request.
 - **Update Chopper's knowledge:** edit / add `.md` files in `data/notes/`.
   Also re-read live.
+
+## Live Torn data (auto-refresh)
+
+`torn_live.py` keeps Chopper current by pulling game data straight from the
+official Torn API v2: items (with shop/abroad prices), weapon mods, ammo, gyms,
+properties, company types + specials, crimes + subcrimes, education, the faction
+tree, honors, medals, merits, museum sets, OC scenarios, stocks, bank rates, city
+shop prices, Halloween upgrades, Elimination standings, and the event calendar.
+
+* Set `TORN_API_KEY` in the Portainer stack environment (a **Public Only** key is
+  enough). Without it the service just runs on the static notes.
+* It refreshes on startup and every `TORN_REFRESH_HOURS` (default 6). No image
+  rebuild or redeploy is needed for data to update.
+* Live data replaces the static API-dump notes it supersedes (honors, medals,
+  merits, stocks, OC scenarios, education, faction tree, company details,
+  calendar). Wiki-written notes are kept as they are.
+* `GET /health` shows what loaded and any errors; `POST /refresh` (same
+  `Authorization: Bearer <secret>` as `/ask`) forces a refresh now.
+* Test locally: `pip install httpx` then
+  `TORN_API_KEY=... python torn_live.py --dump live-dump` writes the rendered
+  notes to `live-dump/` so you can read exactly what Chopper will know.
+
+### Live player lookups
+
+With `TORN_API_KEY` set, questions like "who is flirt", "is flirt online", "what
+level is EMH", "look up flirt [2384632]" or "who is @someone" pull that player's
+**public** Torn profile live (level, rank, account age, faction + position,
+status, last action, property, spouse, awards) and hand it to Chopper as a fact.
+Names resolve via the API's player search (exact name match only); pings resolve
+via the bot's `verification` table (Torn ID), then Torn's own Discord link, then
+the display name. Lookups are cached for 5 minutes. "Tell me about X" only looks
+up a player when X isn't already something in the notes (an item, faction...).
+The bot sends pinged users in the `/ask` payload as
+`"mentions": [{"discord_id": "...", "name": "TornName [id]"}]`.
+
+The Torn **wiki is not fetched**: it sits behind an anti-bot challenge, so
+wiki-derived notes in `data/notes/` are still maintained by hand.
+
+**This repo is public - never commit a real key.** `.env` is git-ignored.
